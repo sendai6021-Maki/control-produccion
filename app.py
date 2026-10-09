@@ -4,7 +4,6 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Base de datos en memoria
 inventario_registros = []
 
 HTML_PAGE = """<!DOCTYPE html>
@@ -13,7 +12,6 @@ HTML_PAGE = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Producción Textil</title>
-    <!-- Librerías JS -->
     <script src="https://unpkg.com/@zxing/library@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/kjua@0.9.0/dist/kjua.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -206,8 +204,7 @@ HTML_PAGE = """<!DOCTYPE html>
 
         function limpiarTexto(texto) {
             if (!texto) return '';
-            texto = ("" + texto).replace(/^\\uFEFF/, '').replace(/^ï»¿/, '');
-            return texto.trim();
+            return ("" + texto).replace(/^\\uFEFF/, '').replace(/^ï»¿/, '').trim();
         }
 
         function modoCamara() {
@@ -341,10 +338,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             })
-            .then(r => {
-                if (!r.ok) throw new Error("Error en el servidor");
-                return r.json();
-            })
+            .then(r => r.json())
             .then(data => {
                 if (data.ok) {
                     alert('Movimiento de ' + tipo.toUpperCase() + ' guardado (' + pesoIngresado + ' kg).');
@@ -440,8 +434,11 @@ def home():
 def get_producto():
     titulo = request.args.get('titulo', '')
     tipo_rafia = request.args.get('tipo_rafia', '')
-    
-    total_peso = sum(
-        item['peso'] if item['tipo'] == 'entrada' else -item['peso']
-        for item in inventario_registros 
-        if item.get('titulo') == tit
+    total_peso = 0.0
+    for item in inventario_registros:
+        if item.get('titulo') == titulo and item.get('tipo_rafia') == tipo_rafia:
+            if item.get('tipo') == 'entrada':
+                total_peso += item.get('peso', 0.0)
+            else:
+                total_peso -= item.get('peso', 0.0)
+    return jsonify({"total_peso": round(total_peso, 2
