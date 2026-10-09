@@ -97,15 +97,17 @@ HTML_TEMPLATE = """
                     <div class="info-item">🧵 <b>Tipo Rafia:</b> <br><span id="det-tipo-rafia">---</span></div>
                     <div class="info-item">⏱️ <b>Turno:</b> <br><span id="det-turno">---</span></div>
                     <div class="info-item">📅 <b>Fecha:</b> <br><span id="det-fecha">---</span></div>
-                    <div class="info-item">⚖️ <b>Peso:</b> <br><span id="det-peso">---</span></div>
+                    <div class="info-item">⚖️ <b>Peso Etiqueta:</b> <br><span id="det-peso">---</span> kg</div>
                     <div class="info-item">🧶 <b># Conos:</b> <br><span id="det-conos">---</span></div>
                     <div class="info-item" style="grid-column: span 2;">👤 <b>Responsable:</b> <br><span id="det-responsable">---</span></div>
                 </div>
 
                 <div style="margin-top: 12px; border-top: 1px dashed #bfdbfe; padding-top: 8px;">
-                    <span>Entradas registradas de este producto: <b id="p-stock">0</b></span><br><br>
-                    <label>Cantidad a procesar:</label>
-                    <input type="number" id="cant" value="1">
+                    <p style="margin: 4px 0 10px 0; font-size: 15px;">
+                        📊 Stock Total en Almacén: <b id="p-stock" style="color: #16a34a; font-size: 17px;">0</b> <b>kg</b>
+                    </p>
+                    <label>Peso a procesar (kg):</label>
+                    <input type="number" id="cant-peso" step="any" placeholder="Peso en kg">
                     
                     <div style="display: flex; gap: 8px;">
                         <button onclick="registrar('entrada')" class="success">+ Entrada</button>
@@ -120,7 +122,20 @@ HTML_TEMPLATE = """
             <h3>🏷️ Crear Etiqueta de Producción</h3>
             
             <label>Título Tex:</label>
-            <input type="text" id="gen-titulo" placeholder="Ej: 85 - 2.5" value="85 - 2.5">
+            <select id="gen-titulo">
+                <option value="55 - 2.3">55 - 2.3</option>
+                <option value="63 - 2.1">63 - 2.1</option>
+                <option value="65 - 2.5">65 - 2.5</option>
+                <option value="66 - 2.3">66 - 2.3</option>
+                <option value="70 - 2.4">70 - 2.4</option>
+                <option value="75 - 3.1">75 - 3.1</option>
+                <option value="83 - 3.1">83 - 3.1</option>
+                <option value="85 - 2.5" selected>85 - 2.5</option>
+                <option value="91 - 3.1">91 - 3.1</option>
+                <option value="110 - 3.1">110 - 3.1</option>
+                <option value="114 - 3.3">114 - 3.3</option>
+                <option value="147 - 3.3">147 - 3.3</option>
+            </select>
 
             <label>Tipo de Rafia:</label>
             <select id="gen-tipo-rafia">
@@ -139,13 +154,19 @@ HTML_TEMPLATE = """
             <input type="date" id="gen-fecha">
 
             <label>Peso (kg):</label>
-            <input type="text" id="gen-peso" placeholder="Ej: 356" value="356">
+            <input type="number" step="any" id="gen-peso" placeholder="Ej: 300">
 
             <label># Conos:</label>
             <input type="number" id="gen-conos" placeholder="Ej: 295" value="295">
 
             <label>Responsable:</label>
-            <input type="text" id="gen-responsable" placeholder="Ej: Diego Castaño" value="Diego Castaño">
+            <select id="gen-responsable">
+                <option value="Didier Estrada">Didier Estrada</option>
+                <option value="Diego Castañeda" selected>Diego Castañeda</option>
+                <option value="Jonathan Ortiz">Jonathan Ortiz</option>
+                <option value="Yirman Doria">Yirman Doria</option>
+                <option value="Alexander Duque">Alexander Duque</option>
+            </select>
             
             <button onclick="generarEtiqueta()" class="secondary">Generar Etiqueta</button>
             
@@ -171,7 +192,7 @@ HTML_TEMPLATE = """
                         <th>Título Tex</th>
                         <th>Detalles</th>
                         <th>Tipo Mov.</th>
-                        <th>Cant</th>
+                        <th>Peso (kg)</th>
                     </tr>
                 </thead>
                 <tbody id="tabla-body"></tbody>
@@ -278,7 +299,7 @@ HTML_TEMPLATE = """
                     tipo_rafia: "N/A",
                     turno: "N/A",
                     fecha: "N/A",
-                    peso: "N/A",
+                    peso: "0",
                     conos: "N/A",
                     responsable: "N/A"
                 };
@@ -292,6 +313,9 @@ HTML_TEMPLATE = """
             document.getElementById('det-conos').innerText = datosProductoActual.conos;
             document.getElementById('det-responsable').innerText = datosProductoActual.responsable;
 
+            // Rellena automáticamente el campo con el peso de la etiqueta leída
+            document.getElementById('cant-peso').value = datosProductoActual.peso;
+
             document.getElementById('res-box').style.display = 'block';
             cargarStock(datosProductoActual.titulo, datosProductoActual.tipo_rafia);
         }
@@ -299,24 +323,29 @@ HTML_TEMPLATE = """
         async function cargarStock(titulo, tipo_rafia) {
             let res = await fetch('/api/producto?titulo=' + encodeURIComponent(titulo) + '&tipo_rafia=' + encodeURIComponent(tipo_rafia));
             let data = await res.json();
-            document.getElementById('p-stock').innerText = data.total_entradas || 0;
+            document.getElementById('p-stock').innerText = data.total_peso || 0;
         }
 
         async function registrar(tipo) {
-            let cant = parseInt(document.getElementById('cant').value) || 1;
+            let pesoIngresado = parseFloat(document.getElementById('cant-peso').value) || 0;
             
+            if (pesoIngresado <= 0) {
+                alert("Por favor ingresa un peso válido mayor a 0 kg.");
+                return;
+            }
+
             let res = await fetch('/api/movimiento', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ 
                     datos: datosProductoActual,
                     tipo: tipo, 
-                    cantidad: cant 
+                    peso: pesoIngresado 
                 })
             });
             let data = await res.json();
             if (data.ok) {
-                alert("Registro añadido con éxito.");
+                alert(`Movimiento de ${tipo.toUpperCase()} guardado (${pesoIngresado} kg).`);
                 document.getElementById('res-box').style.display = 'none';
                 actualizarTabla();
             }
@@ -329,15 +358,15 @@ HTML_TEMPLATE = """
             
             data.forEach((p, idx) => {
                 let badgeTipo = p.tipo === 'entrada' 
-                    ? '<span style="color:green; font-weight:bold;">Entrada</span>' 
-                    : '<span style="color:red; font-weight:bold;">Salida</span>';
+                    ? '<span style="color:green; font-weight:bold;">+ Entrada</span>' 
+                    : '<span style="color:red; font-weight:bold;">- Salida</span>';
 
                 html += `<tr>
                     <td>${idx + 1}</td>
                     <td><b>${p.titulo}</b><br><small style="color:#2563eb;">(${p.tipo_rafia || 'N/A'})</small></td>
-                    <td>${p.turno} | ${p.fecha}<br>Peso: ${p.peso} | Conos: ${p.conos}<br>Resp: ${p.responsable}</td>
+                    <td>${p.turno} | ${p.fecha}<br>Conos: ${p.conos} | Resp: ${p.responsable}</td>
                     <td>${badgeTipo}</td>
-                    <td><b>${p.cantidad}</b></td>
+                    <td><b>${p.peso} kg</b></td>
                 </tr>`;
             });
             
@@ -354,13 +383,13 @@ HTML_TEMPLATE = """
             let responsable = document.getElementById('gen-responsable').value.trim();
 
             if (!titulo || !peso || !fecha || !conos || !responsable) {
-                alert("Por favor completa todos los campos.");
+                alert("Por favor completa todos los campos (incluyendo el peso).");
                 return;
             }
 
             let codigoEstructurado = `${titulo}|${tipoRafia}|${turno}|${fecha}|${peso}|${conos}|${responsable}`;
 
-            document.getElementById('lbl-nombre').innerText = `${titulo} (${tipoRafia})`;
+            document.getElementById('lbl-nombre').innerText = `${titulo} (${tipoRafia}) - ${peso} kg`;
             document.getElementById('area-impresion').style.display = 'flex';
             document.getElementById('acciones-etiqueta').style.display = 'flex';
 
@@ -404,45 +433,19 @@ def get_producto():
     titulo = request.args.get('titulo', '')
     tipo_rafia = request.args.get('tipo_rafia', '')
     
-    total = sum(
-        item['cantidad'] for item in inventario_registros 
-        if item['titulo'] == titulo and item.get('tipo_rafia') == tipo_rafia and item['tipo'] == 'entrada'
+    # Suma las entradas en kg y resta las salidas en kg
+    total_peso = sum(
+        item['peso'] if item['tipo'] == 'entrada' else -item['peso']
+        for item in inventario_registros 
+        if item['titulo'] == titulo and item.get('tipo_rafia') == tipo_rafia
     )
-    return jsonify({"total_entradas": total})
+    return jsonify({"total_peso": round(total_peso, 2)})
 
 @app.route('/api/movimiento', methods=['POST'])
 def registrar_movimiento():
     req = request.json
     datos = req.get('datos', {})
     tipo = req.get('tipo')
-    cantidad = req.get('cantidad', 1)
+    peso = float(req.get('peso', 0))
     
-    titulo = datos.get('titulo')
-
-    if not titulo:
-        return jsonify({"ok": False, "error": "Título no válido"})
-
-    nuevo_registro = {
-        "titulo": titulo,
-        "tipo_rafia": datos.get('tipo_rafia', 'N/A'),
-        "turno": datos.get('turno'),
-        "fecha": datos.get('fecha'),
-        "peso": datos.get('peso'),
-        "conos": datos.get('conos'),
-        "responsable": datos.get('responsable'),
-        "tipo": tipo,
-        "cantidad": cantidad,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-
-    inventario_registros.append(nuevo_registro)
-
-    return jsonify({"ok": True})
-
-@app.route('/api/inventario')
-def get_inventario():
-    return jsonify(inventario_registros)
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+ 
