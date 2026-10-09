@@ -208,7 +208,7 @@ HTML_TEMPLATE = """
 
         function limpiarTexto(texto) {
             if (!texto) return '';
-            texto = texto.replace(/^\uFEFF/, '').replace(/^ï»¿/, '');
+            texto = texto.toString().replace(/^\uFEFF/, '').replace(/^ï»¿/, '');
             try {
                 if (/[\xC2-\xF4][\x80-\xBF]/.test(texto)) {
                     texto = decodeURIComponent(escape(texto));
@@ -313,64 +313,78 @@ HTML_TEMPLATE = """
             document.getElementById('det-conos').innerText = datosProductoActual.conos;
             document.getElementById('det-responsable').innerText = datosProductoActual.responsable;
 
-            // Rellena automáticamente el campo con el peso de la etiqueta leída
-            document.getElementById('cant-peso').value = datosProductoActual.peso;
+            let pesoLimpio = parseFloat(datosProductoActual.peso) || 0;
+            document.getElementById('cant-peso').value = pesoLimpio > 0 ? pesoLimpio : '';
 
             document.getElementById('res-box').style.display = 'block';
             cargarStock(datosProductoActual.titulo, datosProductoActual.tipo_rafia);
         }
 
         async function cargarStock(titulo, tipo_rafia) {
-            let res = await fetch('/api/producto?titulo=' + encodeURIComponent(titulo) + '&tipo_rafia=' + encodeURIComponent(tipo_rafia));
-            let data = await res.json();
-            document.getElementById('p-stock').innerText = data.total_peso || 0;
+            try {
+                let res = await fetch('/api/producto?titulo=' + encodeURIComponent(titulo) + '&tipo_rafia=' + encodeURIComponent(tipo_rafia));
+                let data = await res.json();
+                document.getElementById('p-stock').innerText = data.total_peso || 0;
+            } catch (err) {
+                console.error("Error al cargar stock:", err);
+            }
         }
 
         async function registrar(tipo) {
-            let pesoIngresado = parseFloat(document.getElementById('cant-peso').value) || 0;
+            let pesoIngresado = parseFloat(document.getElementById('cant-peso').value);
             
-            if (pesoIngresado <= 0) {
+            if (isNaN(pesoIngresado) || pesoIngresado <= 0) {
                 alert("Por favor ingresa un peso válido mayor a 0 kg.");
                 return;
             }
 
-            let res = await fetch('/api/movimiento', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ 
-                    datos: datosProductoActual,
-                    tipo: tipo, 
-                    peso: pesoIngresado 
-                })
-            });
-            let data = await res.json();
-            if (data.ok) {
-                alert(`Movimiento de ${tipo.toUpperCase()} guardado (${pesoIngresado} kg).`);
-                document.getElementById('res-box').style.display = 'none';
-                actualizarTabla();
+            try {
+                let res = await fetch('/api/movimiento', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ 
+                        datos: datosProductoActual,
+                        tipo: tipo, 
+                        peso: pesoIngresado 
+                    })
+                });
+                let data = await res.json();
+                if (data.ok) {
+                    alert(`Movimiento de ${tipo.toUpperCase()} guardado (${pesoIngresado} kg).`);
+                    await actualizarTabla();
+                    await cargarStock(datosProductoActual.titulo, datosProductoActual.tipo_rafia);
+                } else {
+                    alert("Error del servidor: " + (data.error || "No se pudo registrar"));
+                }
+            } catch (err) {
+                alert("Error de conexión al guardar el movimiento: " + err);
             }
         }
 
         async function actualizarTabla() {
-            let res = await fetch('/api/inventario');
-            let data = await res.json();
-            let html = "";
-            
-            data.forEach((p, idx) => {
-                let badgeTipo = p.tipo === 'entrada' 
-                    ? '<span style="color:green; font-weight:bold;">+ Entrada</span>' 
-                    : '<span style="color:red; font-weight:bold;">- Salida</span>';
+            try {
+                let res = await fetch('/api/inventario');
+                let data = await res.json();
+                let html = "";
+                
+                data.forEach((p, idx) => {
+                    let badgeTipo = p.tipo === 'entrada' 
+                        ? '<span style="color:green; font-weight:bold;">+ Entrada</span>' 
+                        : '<span style="color:red; font-weight:bold;">- Salida</span>';
 
-                html += `<tr>
-                    <td>${idx + 1}</td>
-                    <td><b>${p.titulo}</b><br><small style="color:#2563eb;">(${p.tipo_rafia || 'N/A'})</small></td>
-                    <td>${p.turno} | ${p.fecha}<br>Conos: ${p.conos} | Resp: ${p.responsable}</td>
-                    <td>${badgeTipo}</td>
-                    <td><b>${p.peso} kg</b></td>
-                </tr>`;
-            });
-            
-            document.getElementById('tabla-body').innerHTML = html;
+                    html += `<tr>
+                        <td>${idx + 1}</td>
+                        <td><b>${p.titulo}</b><br><small style="color:#2563eb;">(${p.tipo_rafia || 'N/A'})</small></td>
+                        <td>${p.turno} | ${p.fecha}<br>Conos: ${p.conos} | Resp: ${p.responsable}</td>
+                        <td>${badgeTipo}</td>
+                        <td><b>${p.peso} kg</b></td>
+                    </tr>`;
+                });
+                
+                document.getElementById('tabla-body').innerHTML = html;
+            } catch (err) {
+                console.error("Error al actualizar tabla:", err);
+            }
         }
 
         function generarEtiqueta() {
@@ -426,26 +440,4 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def home():
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/api/producto')
-def get_producto():
-    titulo = request.args.get('titulo', '')
-    tipo_rafia = request.args.get('tipo_rafia', '')
-    
-    # Suma las entradas en kg y resta las salidas en kg
-    total_peso = sum(
-        item['peso'] if item['tipo'] == 'entrada' else -item['peso']
-        for item in inventario_registros 
-        if item['titulo'] == titulo and item.get('tipo_rafia') == tipo_rafia
-    )
-    return jsonify({"total_peso": round(total_peso, 2)})
-
-@app.route('/api/movimiento', methods=['POST'])
-def registrar_movimiento():
-    req = request.json
-    datos = req.get('datos', {})
-    tipo = req.get('tipo')
-    peso = float(req.get('peso', 0))
-    
- 
+    return render_template_str
