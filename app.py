@@ -4,7 +4,7 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Base de datos en memoria para el historial
+# Base de datos en memoria
 inventario_registros = []
 
 HTML_PAGE = """<!DOCTYPE html>
@@ -13,7 +13,7 @@ HTML_PAGE = """<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Producción Textil</title>
-    <!-- Librerías JS: ZXing, kjua y html2canvas -->
+    <!-- Librerías JS -->
     <script src="https://unpkg.com/@zxing/library@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/kjua@0.9.0/dist/kjua.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -206,12 +206,7 @@ HTML_PAGE = """<!DOCTYPE html>
 
         function limpiarTexto(texto) {
             if (!texto) return '';
-            texto = texto.toString().replace(/^\\uFEFF/, '').replace(/^ï»¿/, '');
-            try {
-                if (/[\\xC2-\\xF4][\\x80-\\xBF]/.test(texto)) {
-                    texto = decodeURIComponent(escape(texto));
-                }
-            } catch (e) {}
+            texto = ("" + texto).replace(/^\\uFEFF/, '').replace(/^ï»¿/, '');
             return texto.trim();
         }
 
@@ -318,17 +313,16 @@ HTML_PAGE = """<!DOCTYPE html>
             cargarStock(datosProductoActual.titulo, datosProductoActual.tipo_rafia);
         }
 
-        async function cargarStock(titulo, tipo_rafia) {
-            try {
-                let res = await fetch('/api/producto?titulo=' + encodeURIComponent(titulo) + '&tipo_rafia=' + encodeURIComponent(tipo_rafia));
-                let data = await res.json();
-                document.getElementById('p-stock').innerText = data.total_peso || 0;
-            } catch (err) {
-                console.error("Error stock:", err);
-            }
+        function cargarStock(titulo, tipo_rafia) {
+            fetch('/api/producto?titulo=' + encodeURIComponent(titulo) + '&tipo_rafia=' + encodeURIComponent(tipo_rafia))
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('p-stock').innerText = data.total_peso || 0;
+                })
+                .catch(err => console.error("Error stock:", err));
         }
 
-        async function registrar(tipo) {
+        function registrar(tipo) {
             let pesoIngresado = parseFloat(document.getElementById('cant-peso').value);
             
             if (isNaN(pesoIngresado) || pesoIngresado <= 0) {
@@ -336,17 +330,22 @@ HTML_PAGE = """<!DOCTYPE html>
                 return;
             }
 
-            try {
-                let res = await fetch('/api/movimiento', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        datos: datosProductoActual,
-                        tipo: tipo, 
-                        peso: pesoIngresado 
-                    })
-                });
-                let data = await res.json();
+            let payload = {
+                datos: datosProductoActual,
+                tipo: tipo,
+                peso: pesoIngresado
+            };
+
+            fetch('/api/movimiento', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(r => {
+                if (!r.ok) throw new Error("Error en el servidor");
+                return r.json();
+            })
+            .then(data => {
                 if (data.ok) {
                     alert('Movimiento de ' + tipo.toUpperCase() + ' guardado (' + pesoIngresado + ' kg).');
                     actualizarTabla();
@@ -354,35 +353,33 @@ HTML_PAGE = """<!DOCTYPE html>
                 } else {
                     alert("Error: " + (data.error || "No se pudo registrar"));
                 }
-            } catch (err) {
-                alert("Error de conexión: " + err);
-            }
+            })
+            .catch(err => {
+                alert("Error al guardar: " + err);
+            });
         }
 
-        async function actualizarTabla() {
-            try {
-                let res = await fetch('/api/inventario');
-                let data = await res.json();
-                let html = "";
-                
-                data.forEach((p, idx) => {
-                    let badgeTipo = p.tipo === 'entrada' 
-                        ? '<span style="color:green; font-weight:bold;">+ Entrada</span>' 
-                        : '<span style="color:red; font-weight:bold;">- Salida</span>';
+        function actualizarTabla() {
+            fetch('/api/inventario')
+                .then(r => r.json())
+                .then(data => {
+                    let html = "";
+                    data.forEach((p, idx) => {
+                        let badgeTipo = p.tipo === 'entrada' 
+                            ? '<span style="color:green; font-weight:bold;">+ Entrada</span>' 
+                            : '<span style="color:red; font-weight:bold;">- Salida</span>';
 
-                    html += '<tr>' +
-                        '<td>' + (idx + 1) + '</td>' +
-                        '<td><b>' + p.titulo + '</b><br><small style="color:#2563eb;">(' + (p.tipo_rafia || 'N/A') + ')</small></td>' +
-                        '<td>' + p.turno + ' | ' + p.fecha + '<br>Conos: ' + p.conos + ' | Resp: ' + p.responsable + '</td>' +
-                        '<td>' + badgeTipo + '</td>' +
-                        '<td><b>' + p.peso + ' kg</b></td>' +
-                    '</tr>';
-                });
-                
-                document.getElementById('tabla-body').innerHTML = html;
-            } catch (err) {
-                console.error("Error tabla:", err);
-            }
+                        html += '<tr>' +
+                            '<td>' + (idx + 1) + '</td>' +
+                            '<td><b>' + p.titulo + '</b><br><small style="color:#2563eb;">(' + (p.tipo_rafia || 'N/A') + ')</small></td>' +
+                            '<td>' + p.turno + ' | ' + p.fecha + '<br>Conos: ' + p.conos + ' | Resp: ' + p.responsable + '</td>' +
+                            '<td>' + badgeTipo + '</td>' +
+                            '<td><b>' + p.peso + ' kg</b></td>' +
+                        '</tr>';
+                    });
+                    document.getElementById('tabla-body').innerHTML = html;
+                })
+                .catch(err => console.error("Error tabla:", err));
         }
 
         function generarEtiqueta() {
@@ -437,9 +434,14 @@ HTML_PAGE = """<!DOCTYPE html>
 
 @app.route('/')
 def home():
-    # Usar Response directo evita colisiones de render_template_string
     return Response(HTML_PAGE, mimetype='text/html')
 
 @app.route('/api/producto')
 def get_producto():
-    titu
+    titulo = request.args.get('titulo', '')
+    tipo_rafia = request.args.get('tipo_rafia', '')
+    
+    total_peso = sum(
+        item['peso'] if item['tipo'] == 'entrada' else -item['peso']
+        for item in inventario_registros 
+        if item.get('titulo') == tit
