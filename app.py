@@ -1,20 +1,19 @@
 import os
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, Response, request, jsonify
 from datetime import datetime
 
 app = Flask(__name__)
 
-# Lista de registros individuales en memoria
+# Base de datos en memoria para el historial
 inventario_registros = []
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
+HTML_PAGE = """<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Control de Producción Textil</title>
-    <!-- Librerías JS: ZXing (Lectura), kjua (Generación QR) y html2canvas -->
+    <!-- Librerías JS: ZXing, kjua y html2canvas -->
     <script src="https://unpkg.com/@zxing/library@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/kjua@0.9.0/dist/kjua.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -66,7 +65,7 @@ HTML_TEMPLATE = """
     <div class="container">
         <h2>🏭 Control de Producción Textil</h2>
 
-        <!-- MÓDULO 1: ESCÁNER (CÁMARA / GALERÍA) -->
+        <!-- MÓDULO 1: ESCÁNER -->
         <div class="section">
             <h3>🔍 Leer Código QR / Barras</h3>
             
@@ -88,7 +87,7 @@ HTML_TEMPLATE = """
                 <img id="img-preview" style="display:none; max-height:180px; object-fit:contain; background:#fff; padding:5px; border:1px solid #ccc; margin-top:10px;">
             </div>
 
-            <!-- RESULTADO DE LECTURA DESGLOSADO -->
+            <!-- RESULTADO DE LECTURA -->
             <div id="res-box" class="card" style="display:none;">
                 <h4 style="margin:0 0 8px 0; color:#1e40af;">Detalles de Lote / Producción</h4>
                 
@@ -170,7 +169,6 @@ HTML_TEMPLATE = """
             
             <button onclick="generarEtiqueta()" class="secondary">Generar Etiqueta</button>
             
-            <!-- Vista previa de etiqueta QR -->
             <div id="area-impresion" style="display:none;">
                 <b id="lbl-nombre" style="font-size: 20px; font-weight: bold; color:#000;">---</b>
                 <div id="qrcode"></div>
@@ -182,7 +180,7 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-        <!-- MÓDULO 3: TABLA DE INVENTARIO -->
+        <!-- MÓDULO 3: HISTORIAL -->
         <div class="section">
             <h3>📋 Inventario Registrado (Historial)</h3>
             <table>
@@ -208,9 +206,9 @@ HTML_TEMPLATE = """
 
         function limpiarTexto(texto) {
             if (!texto) return '';
-            texto = texto.toString().replace(/^\uFEFF/, '').replace(/^ï»¿/, '');
+            texto = texto.toString().replace(/^\\uFEFF/, '').replace(/^ï»¿/, '');
             try {
-                if (/[\xC2-\xF4][\x80-\xBF]/.test(texto)) {
+                if (/[\\xC2-\\xF4][\\x80-\\xBF]/.test(texto)) {
                     texto = decodeURIComponent(escape(texto));
                 }
             } catch (e) {}
@@ -326,7 +324,7 @@ HTML_TEMPLATE = """
                 let data = await res.json();
                 document.getElementById('p-stock').innerText = data.total_peso || 0;
             } catch (err) {
-                console.error("Error al cargar stock:", err);
+                console.error("Error stock:", err);
             }
         }
 
@@ -341,7 +339,7 @@ HTML_TEMPLATE = """
             try {
                 let res = await fetch('/api/movimiento', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         datos: datosProductoActual,
                         tipo: tipo, 
@@ -350,14 +348,14 @@ HTML_TEMPLATE = """
                 });
                 let data = await res.json();
                 if (data.ok) {
-                    alert(`Movimiento de ${tipo.toUpperCase()} guardado (${pesoIngresado} kg).`);
-                    await actualizarTabla();
-                    await cargarStock(datosProductoActual.titulo, datosProductoActual.tipo_rafia);
+                    alert('Movimiento de ' + tipo.toUpperCase() + ' guardado (' + pesoIngresado + ' kg).');
+                    actualizarTabla();
+                    cargarStock(datosProductoActual.titulo, datosProductoActual.tipo_rafia);
                 } else {
-                    alert("Error del servidor: " + (data.error || "No se pudo registrar"));
+                    alert("Error: " + (data.error || "No se pudo registrar"));
                 }
             } catch (err) {
-                alert("Error de conexión al guardar el movimiento: " + err);
+                alert("Error de conexión: " + err);
             }
         }
 
@@ -372,18 +370,18 @@ HTML_TEMPLATE = """
                         ? '<span style="color:green; font-weight:bold;">+ Entrada</span>' 
                         : '<span style="color:red; font-weight:bold;">- Salida</span>';
 
-                    html += `<tr>
-                        <td>${idx + 1}</td>
-                        <td><b>${p.titulo}</b><br><small style="color:#2563eb;">(${p.tipo_rafia || 'N/A'})</small></td>
-                        <td>${p.turno} | ${p.fecha}<br>Conos: ${p.conos} | Resp: ${p.responsable}</td>
-                        <td>${badgeTipo}</td>
-                        <td><b>${p.peso} kg</b></td>
-                    </tr>`;
+                    html += '<tr>' +
+                        '<td>' + (idx + 1) + '</td>' +
+                        '<td><b>' + p.titulo + '</b><br><small style="color:#2563eb;">(' + (p.tipo_rafia || 'N/A') + ')</small></td>' +
+                        '<td>' + p.turno + ' | ' + p.fecha + '<br>Conos: ' + p.conos + ' | Resp: ' + p.responsable + '</td>' +
+                        '<td>' + badgeTipo + '</td>' +
+                        '<td><b>' + p.peso + ' kg</b></td>' +
+                    '</tr>';
                 });
                 
                 document.getElementById('tabla-body').innerHTML = html;
             } catch (err) {
-                console.error("Error al actualizar tabla:", err);
+                console.error("Error tabla:", err);
             }
         }
 
@@ -397,13 +395,13 @@ HTML_TEMPLATE = """
             let responsable = document.getElementById('gen-responsable').value.trim();
 
             if (!titulo || !peso || !fecha || !conos || !responsable) {
-                alert("Por favor completa todos los campos (incluyendo el peso).");
+                alert("Por favor completa todos los campos.");
                 return;
             }
 
-            let codigoEstructurado = `${titulo}|${tipoRafia}|${turno}|${fecha}|${peso}|${conos}|${responsable}`;
+            let codigoEstructurado = titulo + '|' + tipoRafia + '|' + turno + '|' + fecha + '|' + peso + '|' + conos + '|' + responsable;
 
-            document.getElementById('lbl-nombre').innerText = `${titulo} (${tipoRafia}) - ${peso} kg`;
+            document.getElementById('lbl-nombre').innerText = titulo + ' (' + tipoRafia + ') - ' + peso + ' kg';
             document.getElementById('area-impresion').style.display = 'flex';
             document.getElementById('acciones-etiqueta').style.display = 'flex';
 
@@ -425,7 +423,7 @@ HTML_TEMPLATE = """
             const contenedor = document.getElementById('area-impresion');
             html2canvas(contenedor, { scale: 3, backgroundColor: "#ffffff" }).then(canvas => {
                 const link = document.createElement('a');
-                link.download = `Etiqueta_${document.getElementById('gen-titulo').value}_${document.getElementById('gen-tipo-rafia').value}.png`;
+                link.download = 'Etiqueta_' + document.getElementById('gen-titulo').value + '.png';
                 link.href = canvas.toDataURL('image/png');
                 link.click();
             });
@@ -435,9 +433,13 @@ HTML_TEMPLATE = """
         actualizarTabla();
     </script>
 </body>
-</html>
-"""
+</html>"""
 
 @app.route('/')
 def home():
-    return render_template_str
+    # Usar Response directo evita colisiones de render_template_string
+    return Response(HTML_PAGE, mimetype='text/html')
+
+@app.route('/api/producto')
+def get_producto():
+    titu
