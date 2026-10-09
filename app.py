@@ -36,7 +36,6 @@ HTML_PAGE = """<!DOCTYPE html>
         th { background: #f1f5f9; }
         .tab-buttons { display: flex; gap: 8px; margin-bottom: 10px; }
         .tab-buttons button { margin-top: 0; font-size: 13px; }
-
         #area-impresion {
             background: #ffffff !important;
             padding: 20px !important;
@@ -49,9 +48,7 @@ HTML_PAGE = """<!DOCTYPE html>
             align-items: center;
             justify-content: center;
         }
-
         #qrcode { margin-top: 10px; }
-
         @media print {
             body * { visibility: hidden; }
             #area-impresion, #area-impresion * { visibility: visible; }
@@ -63,32 +60,26 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="container">
         <h2>🏭 Control de Producción Textil</h2>
 
-        <!-- MÓDULO 1: ESCÁNER -->
         <div class="section">
             <h3>🔍 Leer Código QR / Barras</h3>
-            
             <div class="tab-buttons">
                 <button onclick="modoCamara()" class="secondary">📷 Usar Cámara</button>
                 <button onclick="modoGaleria()" class="secondary">🖼️ De Galería</button>
             </div>
 
-            <!-- Cámara -->
             <div id="box-camara" style="display:none;">
                 <button onclick="startScanner()">Activar Cámara</button>
                 <video id="video" style="display:none;"></video>
             </div>
 
-            <!-- Galería -->
             <div id="box-galeria" style="display:none;">
                 <label>Selecciona la foto guardada:</label>
                 <input type="file" id="file-input" accept="image/*" onchange="escanearImagen(event)">
                 <img id="img-preview" style="display:none; max-height:180px; object-fit:contain; background:#fff; padding:5px; border:1px solid #ccc; margin-top:10px;">
             </div>
 
-            <!-- RESULTADO DE LECTURA -->
             <div id="res-box" class="card" style="display:none;">
                 <h4 style="margin:0 0 8px 0; color:#1e40af;">Detalles de Lote / Producción</h4>
-                
                 <div class="info-grid">
                     <div class="info-item">📦 <b>Título Tex:</b> <br><span id="det-titulo">---</span></div>
                     <div class="info-item">🧵 <b>Tipo Rafia:</b> <br><span id="det-tipo-rafia">---</span></div>
@@ -105,7 +96,6 @@ HTML_PAGE = """<!DOCTYPE html>
                     </p>
                     <label>Peso a procesar (kg):</label>
                     <input type="number" id="cant-peso" step="any" placeholder="Peso en kg">
-                    
                     <div style="display: flex; gap: 8px;">
                         <button onclick="registrar('entrada')" class="success">+ Entrada</button>
                         <button onclick="registrar('salida')" class="danger">- Salida</button>
@@ -114,10 +104,8 @@ HTML_PAGE = """<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- MÓDULO 2: GENERADOR DE ETIQUETAS -->
         <div class="section">
             <h3>🏷️ Crear Etiqueta de Producción</h3>
-            
             <label>Título Tex:</label>
             <select id="gen-titulo">
                 <option value="55 - 2.3">55 - 2.3</option>
@@ -178,7 +166,6 @@ HTML_PAGE = """<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- MÓDULO 3: HISTORIAL -->
         <div class="section">
             <h3>📋 Inventario Registrado (Historial)</h3>
             <table>
@@ -441,4 +428,42 @@ def get_producto():
                 total_peso += item.get('peso', 0.0)
             else:
                 total_peso -= item.get('peso', 0.0)
-    return jsonify({"total_peso": round(total_peso, 2
+    return jsonify({"total_peso": round(total_peso, 2)})
+
+@app.route('/api/movimiento', methods=['POST'])
+def registrar_movimiento():
+    req = request.get_json(force=True, silent=True) or {}
+    datos = req.get('datos', {})
+    tipo = req.get('tipo', 'entrada')
+    
+    try:
+        peso = float(req.get('peso', 0))
+    except (ValueError, TypeError):
+        peso = 0.0
+
+    titulo = datos.get('titulo')
+    if not titulo:
+        return jsonify({"ok": False, "error": "Título no válido"}), 400
+
+    nuevo_registro = {
+        "titulo": str(titulo),
+        "tipo_rafia": str(datos.get('tipo_rafia', 'N/A')),
+        "turno": str(datos.get('turno', '')),
+        "fecha": str(datos.get('fecha', '')),
+        "peso": round(peso, 2),
+        "conos": str(datos.get('conos', '')),
+        "responsable": str(datos.get('responsable', '')),
+        "tipo": tipo,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    inventario_registros.append(nuevo_registro)
+    return jsonify({"ok": True})
+
+@app.route('/api/inventario')
+def get_inventario():
+    return jsonify(inventario_registros)
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
